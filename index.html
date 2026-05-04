@@ -754,6 +754,12 @@ const TM={"AKRI|1UK7019|371":[{"t":"03M","q":2},{"t":"06M","q":2},{"t":"18M","q"
 
 /* ═══ CONSTANTS ═══ */
 const LOCS=['AKRI','BUCO','LAAL','LACO','LADI','LAJO'];
+const PORI_GRP={"1": "Abrigos", "2": "Abrigos.L", "3": "Camisas", "4": "Abrigos.L", "5": "Abrigos.L", "7": "Remeras", "8": "Camperas", "9": "Chalecos", "10": "Blazers", "11": "Blazers", "12": "Blazers", "13": "Blazers", "14": "Blazers", "19": "Monoprenda", "20": "Polleras", "30": "Camisas", "31": "Camisas", "32": "Camisas", "33": "Camisas", "34": "Camisas", "35": "Camisas", "36": "Camisas", "37": "Camisas", "38": "Camisas", "39": "Camisas", "40": "Pantalones", "41": "Pantalones", "42": "Pantalones", "43": "Pantalones", "44": "Pantalones", "47": "Monoprendas", "48": "Jeans", "50": "Vestidos", "51": "Vestidos", "52": "Vestidos", "53": "Vestidos", "54": "Vestidos", "55": "Bermudas", "56": "Bermudas", "57": "Bermudas", "60": "Sweat.E", "63": "Buzos", "64": "Buzos", "66": "Sweat.V", "67": "Sweat.V", "68": "Sweat.V", "70": "Remeras", "71": "Remeras", "72": "Remeras", "73": "Remeras", "74": "Remeras", "75": "Remeras", "76": "Remeras", "77": "Remeras", "78": "Remeras", "79": "Remeras", "80": "Medias", "81": "Bufandas", "82": "Chales", "83": "Cintos", "84": "Carteras", "85": "Calzados", "86": "Tops", "87": "Chalecos", "91": "Perfumes", "92": "Accesorios", "93": "Home", "97": "Bolsas Ohnest", "94": "Active/Sport"};
+// ─── Global fam normalizers (used across all tabs) ───
+function _tcFam(f){return(f||'').toLowerCase().replace(/(?:^|[\/\s\-])\w/g,function(c){return c.toUpperCase();})||'';} 
+function _poFamFromCode(art){if(!art||art.length<6)return '';var grp=art.substring(4,6).replace(/^0/,'');return PORI_GRP[grp]||PORI_GRP[art.substring(4,6)]||'';}
+function normPoriFam(f,art){var base=(f||'').replace(/^\d+-/,'').replace(/^[Xx][Xx]-/,'').trim();if(!base&&art)base=_poFamFromCode(art);return _tcFam(base)||'Sin familia';}
+
 const LN={AKRI:'Akiabara · P.Rivera',BUCO:'Burgues · Cba Shopping',LAAL:'Lacoste · V.Allende',LACO:'Lacoste · Cba Shopping',LADI:'Lacoste · Dino A.Verde',LAJO:'Lacoste · P.Jockey',PORI:'Portsaid · P.Rivera'};
 const BRAND={AKRI:'Akiabara',AK:'Akiabara Mujer',LI:'Akiabara Little',BUCO:'Burgues',LACO:'Lacoste',LAJO:'Lacoste',LAAL:'Lacoste',LADI:'Lacoste',LA:'Lacoste',LIV:'LIV Total'};
 const BC={Akiabara:'#7c5cfc',Burgues:'#34d399',Lacoste:'#4f8ef7',Portsaid:'#f87171'};
@@ -1435,7 +1441,7 @@ function r3(){
   SD.st.forEach(s=>{
     // sf expects ventas row format: [fecha, local, sub, ...]
     if(!sf([null,s[0],s[1]])) return;
-    const fam=s[5]||'SIN CLASIF';const loc=s[0];
+    const fam=_tcFam(s[5])||'SIN CLASIF';const loc=s[0];
     if(!stMap[fam])stMap[fam]={};
     stMap[fam][loc]=(stMap[fam][loc]||0)+s[6];
     stLocTot[loc]=(stLocTot[loc]||0)+s[6];
@@ -1445,7 +1451,7 @@ function r3(){
   const stGrandTot=Object.values(stLocTot).reduce((s,v)=>s+v,0);
   const famRateMap={};
   SD.st.filter(s=>sf([null,s[0],s[1]])).forEach(s=>{
-    const fam2=s[5]||'SIN CLASIF';
+    const fam2=_tcFam(s[5])||'SIN CLASIF';
     if(!famRateMap[fam2])famRateMap[fam2]={stQ:0,rateQ:0};
     famRateMap[fam2].stQ+=s[6];
     famRateMap[fam2].rateQ+=getRate(s[0],s[2],s[3]);
@@ -1681,29 +1687,34 @@ function r4(){
     // Build description lookup from PO.v for better article names
     var poVdesc={};(PO.v||[]).forEach(function(r){var k=r[3]+'|'+r[4];if(!poVdesc[k])poVdesc[k]=r[5];});
     // Aggregate PO.st by art+color (normalize color: '00'→'0')
-    var poStAgg={};(PO.st||[]).forEach(function(s){
+    var poStAgg={};
+    // Build art→fam fallback from PO.v for empty fam entries in PO.st
+    (PO.st||[]).forEach(function(s){
       var col=s.color==='00'?'0':s.color;
       var k=s.art+'|'+col;
-      if(!poStAgg[k])poStAgg[k]={art:s.art,color:col,fam:s.fam,qty:0,precio:s.precio};
+      var rawFam=s.fam||'';
+      if(!poStAgg[k])poStAgg[k]={art:s.art,color:col,fam:rawFam,qty:0,precio:s.precio};
       poStAgg[k].qty+=s.qty;
     });
     stAllRaw=Object.values(poStAgg).map(function(s){
       var desc=poVdesc[s.art+'|'+s.color]||s.art;
-      var famNorm=s.fam.replace(/^\d+-/,'').toUpperCase().trim();
+      var famNorm=normPoriFam(s.fam||'',s.art).toUpperCase();
       return ['PORI','PORI',s.art,s.color,desc,famNorm,s.qty,s.precio];
     });
   } else {
     var sdRaw=showAll?SD.st.filter(sf ? s=>sf([null,s[0]]) : ()=>true):SD.st.filter(s=>s[0]===local&&(SCOPE!=='AK'||s[1]==='AK')&&(SCOPE!=='LI'||s[1]==='LI'));
     // Add PO.st for PORI items when showing all or LIV
-    var poStAggLIV={};(PO.st||[]).forEach(function(s){
+    var poStAggLIV={};
+    (PO.st||[]).forEach(function(s){
       var col=s.color==='00'?'0':s.color;
       var k=s.art+'|'+col;
-      if(!poStAggLIV[k])poStAggLIV[k]={art:s.art,color:col,fam:s.fam,qty:0,precio:s.precio};
+      var rawFam=s.fam||'';
+      if(!poStAggLIV[k])poStAggLIV[k]={art:s.art,color:col,fam:rawFam,qty:0,precio:s.precio};
       poStAggLIV[k].qty+=s.qty;
     });
     var poVdescLIV={};(PO.v||[]).forEach(function(r){var k=r[3]+'|'+r[4];if(!poVdescLIV[k])poVdescLIV[k]=r[5];});
     var poStRaw=(SCOPE==='LIV'&&showAll)?Object.values(poStAggLIV).map(function(s){
-      var famNorm=s.fam.replace(/^\d+-/,'').toUpperCase().trim();
+      var famNorm=normPoriFam(s.fam||'',s.art).toUpperCase();
       var desc=poVdescLIV[s.art+'|'+s.color]||s.art;
       return ['PORI','PORI',s.art,s.color,desc,famNorm,s.qty,s.precio];
     }):[];
@@ -1811,7 +1822,8 @@ function r4(){
   ]);}
 
 /* ═══════════════ TAB 8: STOCK / FAMILIAS ═══════════════ */
-let p8={from:'',to:''},t8ratePeriod='apr-jul25',t8filter='all',t8state={local:'TODOS'};
+let p8={from:'',to:''},t8ratePeriod='apr-jul25',t8filter='all',t8state={local:'TODOS',sortBy:'stVal',sortDir:'d'};
+function s8sort(el){var s=el.getAttribute?el.getAttribute('data-field'):el;if(!s)return;if(t8state.sortBy===s){t8state.sortDir=t8state.sortDir==='d'?'a':'d';}else{t8state.sortBy=s;t8state.sortDir='d';}r8();}
 function p8pre(b,p){setAct('p8pr',b);[p8.from,p8.to]=pRange(p);document.getElementById('p8f').value=p8.from;document.getElementById('p8t').value=p8.to;r8();}
 function p8cust(){document.querySelectorAll('#p8pr .btn').forEach(b=>b.classList.remove('on'));p8.from=document.getElementById('p8f').value;p8.to=document.getElementById('p8t').value;r8();}
 function p8rp(b,p){
@@ -1846,10 +1858,8 @@ function r8(){
   }
 
   // ── Fam normalizer (title case, same as PD.v) ──────────────────────────────
-  function _tcFam(f){return(f||'').toLowerCase().replace(/(?:^|[\/\s\-])\w/g,function(c){return c.toUpperCase();})||'Sin familia';}
-  function normPoriFam(f){return _tcFam((f||'').replace(/^\d+-/,'').replace(/^[Xx][Xx]-/,'').trim())||'Sin familia';}
-
-  // ── Aggregate stock by sub+fam ─────────────────────────────────────────────
+  // normPoriFam/_tcFam defined globally
+    // ── Aggregate stock by sub+fam ─────────────────────────────────────────────
   var famData={};
   function getFd(sub,fam){var k=sub+'|'+fam;if(!famData[k])famData[k]={sub:sub,fam:fam,stQ:0,stVal:0,vQ:0,vR:0};return famData[k];}
 
@@ -1872,10 +1882,11 @@ function r8(){
     });
   }
 
-  // PORI stock (PO.st)
+  // PORI stock (PO.st) — fam puede venir vacío, fallback a PO.v
   if(SCOPE==='LIV'||SCOPE==='PORI'){
     (PO.st||[]).forEach(function(s){
-      var fam=normPoriFam(s.fam);
+      var rawFam=s.fam||'';
+      var fam=normPoriFam(rawFam,s.art);
       var d=getFd('PORI',fam);
       d.stQ+=s.qty||0;d.stVal+=(s.qty||0)*(s.precio||0);
     });
@@ -1971,7 +1982,12 @@ function r8(){
   if(t8filter==='stock') rows=rows.filter(function(r){return r.stQ>0;});
   if(t8filter==='nostock') rows=rows.filter(function(r){return r.stQ===0;});
   if(q) rows=rows.filter(function(r){return r.fam.toLowerCase().includes(q);});
-  rows.sort(function(a,b){return b.stVal-a.stVal;});
+  var _sb8=t8state.sortBy,_sd8=t8state.sortDir;
+  rows.sort(function(a,b){
+    var av=a[_sb8]===null||a[_sb8]===undefined?-1:a[_sb8];
+    var bv=b[_sb8]===null||b[_sb8]===undefined?-1:b[_sb8];
+    return _sd8==='d'?bv-av:av-bv;
+  });
 
   var totalStVal=rows.reduce(function(s,r){return s+r.stVal;},0);
 
@@ -1984,14 +2000,15 @@ function r8(){
     t8ratePeriod==='same'?'Per. ventas':
     (rateFrom.slice(0,7)+'/'+rateTo.slice(0,7));
 
+  var _t8s={by:t8state.sortBy,dir:t8state.sortDir};
   var h='<table><thead><tr>';
   if(showAll) h+='<th>Marca / Local</th>';
   h+='<th>Familia</th>' +
-     '<th class="money">Stock $</th>' +
-     '<th style="color:var(--amber)">Stock Uds</th>' +
-     '<th class="money">Ventas $</th>' +
+     sTh('Stock $','stVal',_t8s,'s8sort') +
+     sTh('Stock Uds','stQ',_t8s,'s8sort') +
+     sTh('Ventas $','vR',_t8s,'s8sort') +
      '<th style="color:var(--muted);font-size:11px">Uds tasa<br><span style="font-size:10px;font-weight:400">'+rateLblShort+'</span></th>' +
-     '<th>Meses stock</th>' +
+     sTh('Meses stock','mes',_t8s,'s8sort') +
      '</tr></thead><tbody>';
 
   rows.forEach(function(r){
@@ -2323,7 +2340,7 @@ function buildR6Summary(){
   // Top families with most dead stock
   var famStock={};
   liq.concat(rot).forEach(function(s){
-    var f=s[5]||'Otros';
+    var f=_tcFam(s[5])||'Otros';
     if(!famStock[f]) famStock[f]={uds:0,val:0};
     famStock[f].uds+=s[6]; famStock[f].val+=s[6]*s[7];
   });
@@ -2436,7 +2453,7 @@ function r6dead(ms){
       const urg=getUrgKey(isWinter,da);
       if(t6urg!=='all'&&t6urg!==urg) return;
       if(q&&!(s[2].toLowerCase().startsWith(q)||s[4].toLowerCase().includes(q))) return;
-      rows.push({local:s[0],art:s[2],col:s[3],desc:s[4],fam:s[5],stQ:s[6],precio:s[7],ls,da,isWinter,isSummer,urg});
+      rows.push({local:s[0],art:s[2],col:s[3],desc:s[4],fam:_tcFam(s[5]),stQ:s[6],precio:s[7],ls,da,isWinter,isSummer,urg});
     }
   });
   rows.forEach(function(r){r.valor=r.stQ*r.precio;});
@@ -2584,7 +2601,7 @@ function r6sea(){
     const vR=PD.v.find(r=>r[1]===s[0]&&r[3]===s[2]&&r[4]===s[3]);
     const temp=(vR?vR[8]:'').toUpperCase();const fam=(s[5]||'').toUpperCase();
     const isW=WINTER_FAM.has(fam);const isSu=SUMMER_FAM.has(fam);
-    const item={...s,temp:vR?vR[8]:'',fam:s[5]};
+    const item={...s,temp:vR?vR[8]:'',fam:_tcFam(s[5])};
     if(isW&&(temp==='SW26'||temp.includes('INV')&&temp.includes('26'))) cats['Invierno 2026 – Stock disponible (Temporada nueva)'].push(item);
     else if(isW&&(temp==='SW25'||temp.includes('INV')&&temp.includes('25'))) cats['Invierno 2025 – Stock rezagado (Temporada anterior)'].push(item);
     else if(isW) cats['Invierno anterior a 2025 – Gestionar urgente'].push(item);
